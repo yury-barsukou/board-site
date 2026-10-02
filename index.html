@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<meta name="theme-color" content="#0d0d0d">
+<title>Вход</title>
+<style>
+  :root { color-scheme: light dark; --bg:#f6f6f3; --card:#fcfcfb; --ink:#0b0b0b; --mut:#6b6a66; --line:rgba(11,11,11,.12); --acc:#2a78d6; --bad:#c62828; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0d0d0d; --card:#1a1a19; --ink:#fff; --mut:#a8a79f; --line:rgba(255,255,255,.14); --acc:#3987e5; --bad:#ef8a8a; } }
+  * { box-sizing:border-box; }
+  body { margin:0; min-height:100vh; display:grid; place-items:center; padding:16px; background:var(--bg); color:var(--ink); font:16px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif; }
+  main { width:100%; max-width:380px; background:var(--card); border:1px solid var(--line); border-radius:16px; padding:24px 20px; box-shadow:0 6px 28px rgba(0,0,0,.08); }
+  h1 { margin:0 0 4px; font-size:22px; } p { margin:0 0 16px; color:var(--mut); font-size:14px; }
+  label.f { display:block; font-size:13px; color:var(--mut); margin-bottom:6px; }
+  input[type=password], input[type=text] { width:100%; padding:13px 14px; font-size:17px; border:1px solid var(--line); border-radius:12px; background:transparent; color:inherit; }
+  input:focus-visible, button:focus-visible { outline:2px solid var(--acc); outline-offset:2px; }
+  .row { display:flex; gap:8px; align-items:center; margin:14px 0; font-size:14px; color:var(--mut); }
+  .row input { width:20px; height:20px; accent-color:var(--acc); }
+  button { width:100%; padding:13px; font-size:17px; font-weight:650; border:0; border-radius:12px; background:var(--acc); color:#fff; cursor:pointer; }
+  button.sec { background:transparent; color:var(--acc); border:1px solid var(--line); margin-top:10px; font-weight:600; }
+  button:disabled { opacity:.6; }
+  #msg { min-height:22px; margin-top:12px; font-size:14px; color:var(--bad); } #msg.ok { color:var(--mut); }
+  .small { font-size:12.5px; color:var(--mut); margin-top:14px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>🔒 Вход</h1>
+  <p>Данные зашифрованы. Введите пароль — расшифровка выполняется только в этом браузере.</p>
+  <form id="f" autocomplete="on">
+    <input type="text" name="username" value="board" autocomplete="username" hidden>
+    <label class="f" for="pw">Пароль</label>
+    <input id="pw" name="password" type="password" autocomplete="current-password" autocapitalize="none" autocorrect="off" spellcheck="false" required>
+    <label class="row"><input id="rem" type="checkbox"> Запомнить на этом устройстве</label>
+    <button id="go" type="submit">Открыть</button>
+    <button id="open" class="sec" type="button" hidden>Открыть сохранённую версию</button>
+  </form>
+  <div id="msg" role="status" aria-live="polite"></div>
+  <p class="small" id="note"></p>
+</main>
+<script>
+(() => {
+  'use strict';
+  const SCOPE = new URL('./', location.href);
+  const APP = new URL('app/index.html', SCOPE).href;
+  const PREFIX = 'meddash-', K_REM = 'md_remember', K_VER = 'md_version';
+  const $ = id => document.getElementById(id);
+  const msg = (t, ok) => { $('msg').textContent = t || ''; $('msg').className = ok ? 'ok' : ''; };
+  const lsGet = k => { try { return localStorage.getItem(k); } catch (e) { return null; } };
+  const lsSet = (k, v) => { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch (e) { } };
+  const MIME = { html: 'text/html; charset=utf-8', js: 'text/javascript; charset=utf-8', css: 'text/css; charset=utf-8', json: 'application/json; charset=utf-8' };
+
+  // каждая версия — в своём кэше meddash-<хэш>: так новая версия не конфликтует с удаляемой старой
+  async function wipe(keep) { try { for (const k of await caches.keys()) if (k.startsWith(PREFIX) && k !== keep) await caches.delete(k); } catch (e) { } if (!keep) lsSet(K_VER, null); }
+  async function cached() { try { for (const k of await caches.keys()) if (k.startsWith(PREFIX) && await (await caches.open(k)).match(APP)) return true; } catch (e) { } return false; }
+
+  async function registerSW() {
+    if (!('serviceWorker' in navigator)) throw new Error('Браузер не поддерживает service worker (нужен современный Safari/Chrome).');
+    await navigator.serviceWorker.register('sw.js', { scope: './' });
+    await navigator.serviceWorker.ready;
+  }
+
+  async function decrypt(pass) {
+    const buf = new Uint8Array(await (await fetch('payload.bin', { cache: 'no-store' })).arrayBuffer());
+    decrypt.ver = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', buf))).map(b => b.toString(16).padStart(2, '0')).join('').slice(0, 16);
+    if (buf[0] !== 77 || buf[1] !== 68 || buf[2] !== 49) throw new Error('Неверный формат данных.');
+    const salt = buf.slice(3, 19), iv = buf.slice(19, 31), ct = buf.slice(31), enc = new TextEncoder();
+    const base = await crypto.subtle.importKey('raw', enc.encode(pass), 'PBKDF2', false, ['deriveKey']);
+    const key = await crypto.subtle.deriveKey({ name: 'PBKDF2', salt, iterations: 600000, hash: 'SHA-256' }, base, { name: 'AES-GCM', length: 256 }, false, ['decrypt']);
+    try { return JSON.parse(new TextDecoder().decode(await crypto.subtle.decrypt({ name: 'AES-GCM', iv, additionalData: enc.encode('meddash1') }, key, ct))); }
+    catch (e) { const err = new Error('bad'); err.bad = true; throw err; }
+  }
+
+  async function unlock(pass, remember) {
+    msg('Расшифровка…', true); $('go').disabled = true;
+    try {
+      if (!window.crypto || !crypto.subtle) throw new Error('Нужен защищённый контекст (https).');
+      const data = await decrypt(pass);
+      await registerSW();
+      const ver = decrypt.ver, name = PREFIX + ver;
+      await caches.delete(name);
+      const cache = await caches.open(name);
+      for (const [path, text] of Object.entries(data.files)) {
+        window.__lastPath = path;
+        const u = new URL('app/' + path, SCOPE).href, mk = () => new Response(text, { headers: { 'Content-Type': MIME[path.split('.').pop()] || 'text/plain' } });
+        try { await cache.put(u, mk()); }
+        catch (err) { await cache.delete(u); await cache.put(u, mk()); }   // защита от редкого «Entry already exists»
+      }
+      await wipe(name);                                   // старые версии удаляем только после успешной записи новой
+      lsSet(K_VER, ver); lsSet(K_REM, remember ? '1' : null);
+      location.replace(APP);
+    } catch (e) {
+      msg(e.bad ? 'Неверный пароль.' : ((e.message || 'Ошибка') + (window.__lastPath ? ' [' + window.__lastPath + ']' : '')));
+      $('go').disabled = false;
+    }
+  }
+
+  $('f').addEventListener('submit', e => { e.preventDefault(); unlock($('pw').value, $('rem').checked); });
+  $('open').addEventListener('click', () => location.replace(APP));
+
+  (async () => {
+    const q = new URLSearchParams(location.search);
+    if (q.has('lock')) { await wipe(); lsSet(K_REM, null); msg('Данные стёрты с этого устройства.', true); return; }
+    if (lsGet(K_REM) !== '1') { await wipe(); return; }          // «запомнить» не выбрано — пароль нужен каждый раз
+    if (!(await cached())) return;
+    let fresh = true;
+    try { fresh = (await (await fetch('version.txt', { cache: 'no-store' })).text()).trim() === lsGet(K_VER); } catch (e) { }   // офлайн — открываем сохранённое
+    if (fresh) { location.replace(APP); return; }
+    $('open').hidden = false; $('rem').checked = true;
+    msg('Доступна новая версия: введите пароль, чтобы обновить.', true);
+    $('note').textContent = 'Сохранённая на этом устройстве версия остаётся доступной кнопкой ниже.';
+  })();
+})();
+</script>
+</body>
+</html>
