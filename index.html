@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<meta name="theme-color" content="#0d0d0d">
+<title>Vitamily — вход</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 20.5C6 16.3 3 13 3 9.2 3 6.6 5 4.8 7.3 4.8c1.9 0 3.5 1 4.7 2.8 1.2-1.8 2.8-2.8 4.7-2.8C19 4.8 21 6.6 21 9.2c0 3.8-3 7.1-9 11.3z' fill='%23e5484d'/%3E%3Cpath d='M5.5 11.5h3l1.6-3.2 3 6 1.6-2.8h3.8' fill='none' stroke='%23fff' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<style>
+  :root { color-scheme: light dark; --bg:#f6f6f3; --card:#fcfcfb; --ink:#0b0b0b; --mut:#6b6a66; --line:rgba(11,11,11,.12); --acc:#2a78d6; --bad:#c62828; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0d0d0d; --card:#1a1a19; --ink:#fff; --mut:#a8a79f; --line:rgba(255,255,255,.14); --acc:#3987e5; --bad:#ef8a8a; } }
+  * { box-sizing:border-box; }
+  body { margin:0; min-height:100vh; display:grid; place-items:center; padding:16px; background:var(--bg); color:var(--ink); font:16px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif; }
+  main { width:100%; max-width:380px; background:var(--card); border:1px solid var(--line); border-radius:16px; padding:24px 20px; box-shadow:0 6px 28px rgba(0,0,0,.08); }
+  h1 { margin:0 0 4px; font-size:22px; display:flex; align-items:center; gap:8px; } h1 .logo { width:32px; height:32px; flex:none; } p { margin:0 0 16px; color:var(--mut); font-size:14px; }
+  label.f { display:block; font-size:13px; color:var(--mut); margin:12px 0 6px; } label.f:first-of-type { margin-top:0; }
+  input[type=password], input[type=text] { width:100%; padding:13px 14px; font-size:17px; border:1px solid var(--line); border-radius:12px; background:transparent; color:inherit; }
+  input:focus-visible, button:focus-visible { outline:2px solid var(--acc); outline-offset:2px; }
+  .row { display:flex; gap:8px; align-items:center; margin:14px 0; font-size:14px; color:var(--mut); }
+  .row input { width:20px; height:20px; accent-color:var(--acc); }
+  button { width:100%; padding:13px; font-size:17px; font-weight:650; border:0; border-radius:12px; background:var(--acc); color:#fff; cursor:pointer; }
+  button.sec { background:transparent; color:var(--acc); border:1px solid var(--line); margin-top:10px; font-weight:600; }
+  button:disabled { opacity:.6; }
+  #msg { min-height:22px; margin-top:12px; font-size:14px; color:var(--bad); } #msg.ok { color:var(--mut); }
+  .small { font-size:12.5px; color:var(--mut); margin-top:14px; }
+</style>
+</head>
+<body>
+<main>
+  <h1><svg class="logo" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20.5C6 16.3 3 13 3 9.2 3 6.6 5 4.8 7.3 4.8c1.9 0 3.5 1 4.7 2.8 1.2-1.8 2.8-2.8 4.7-2.8C19 4.8 21 6.6 21 9.2c0 3.8-3 7.1-9 11.3z" fill="#e5484d"/><path d="M5.5 11.5h3l1.6-3.2 3 6 1.6-2.8h3.8" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg> Vitamily</h1>
+  <p>Данные зашифрованы. Введите логин и пароль — расшифровка выполняется только в этом браузере.</p>
+  <form id="f" autocomplete="on">
+    <label class="f" for="lg">Логин</label>
+    <input id="lg" name="username" type="text" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" required>
+    <label class="f" for="pw">Пароль</label>
+    <input id="pw" name="password" type="password" autocomplete="current-password" autocapitalize="none" autocorrect="off" spellcheck="false" required>
+    <label class="row"><input id="rem" type="checkbox"> Запомнить на этом устройстве</label>
+    <button id="go" type="submit">Открыть</button>
+    <button id="open" class="sec" type="button" hidden>Открыть сохранённую версию</button>
+  </form>
+  <div id="msg" role="status" aria-live="polite"></div>
+  <p class="small" id="note"></p>
+</main>
+<script>
+(() => {
+  'use strict';
+  /* Формат записей и данных — dashboard/publish/access.py (менять только вместе). Кратко: логин+пароль -> PBKDF2 -> ключ записи; запись содержит
+     роль и ключи (админ — мастер-ключ, пользователь — ключи своих профилей); данные каждого профиля — отдельный файл d/<файл>.bin. */
+  const SCOPE = new URL('./', location.href);
+  const PREFIX = 'meddash-', K_REM = 'md_remember', K_VER = 'md_version', K_ACC = 'md_access', K_CUR = 'md_cur', K_TOKEN = 'gh_sync_token';
+  const ITER = 600000, enc = new TextEncoder(), dec = new TextDecoder();
+  const $ = id => document.getElementById(id);
+  const msg = (t, ok) => { $('msg').textContent = t || ''; $('msg').className = ok ? 'ok' : ''; };
+  const lsGet = k => { try { return localStorage.getItem(k); } catch (e) { return null; } };
+  const lsSet = (k, v) => { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch (e) { } };
+  const MIME = { html: 'text/html; charset=utf-8', js: 'text/javascript; charset=utf-8', css: 'text/css; charset=utf-8', json: 'application/json; charset=utf-8' };
+  const b64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
+  const hex = u8 => Array.from(u8).map(b => b.toString(16).padStart(2, '0')).join('');
+  const unhex = h => Uint8Array.from(h.match(/../g) || [], x => parseInt(x, 16));
+  const normLogin = s => s.normalize('NFC').trim().toLowerCase();
+  const access = () => { try { return JSON.parse(lsGet(K_ACC) || 'null'); } catch (e) { return null; } };
+  const appUrl = () => { const a = access(), pid = lsGet(K_CUR) || (a && a.home) || ''; return new URL('app/' + pid + '/index.html', SCOPE).href; };
+
+  // каждая версия — в своём кэше meddash-<хэш>: так новая версия не конфликтует с удаляемой старой
+  async function wipe(keep) { try { for (const k of await caches.keys()) if (k.startsWith(PREFIX) && k !== keep) await caches.delete(k); } catch (e) { } if (!keep) { lsSet(K_VER, null); lsSet(K_ACC, null); lsSet(K_CUR, null); } }
+  async function cached() { try { const u = appUrl(); for (const k of await caches.keys()) if (k.startsWith(PREFIX) && await (await caches.open(k)).match(u)) return true; } catch (e) { } return false; }
+
+  async function registerSW() {
+    if (!('serviceWorker' in navigator)) throw new Error('Браузер не поддерживает service worker (нужен современный Safari/Chrome).');
+    await navigator.serviceWorker.register('sw.js', { scope: './' });
+    await navigator.serviceWorker.ready;
+  }
+
+  const hmac = async (keyBytes, label) => new Uint8Array(await crypto.subtle.sign('HMAC', await crypto.subtle.importKey('raw', keyBytes, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']), enc.encode(label)));
+  const aes = (raw, usage) => crypto.subtle.importKey('raw', raw, 'AES-GCM', false, usage);
+  async function openBlob(key, buf, aad) {
+    if (buf[0] !== 77 || buf[1] !== 68 || buf[2] !== 50) throw new Error('Неверный формат данных.');
+    return JSON.parse(dec.decode(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: buf.slice(3, 15), additionalData: enc.encode(aad) }, await aes(key, ['decrypt']), buf.slice(15))));
+  }
+  const getBin = async url => { const r = await fetch(url, { cache: 'no-store' }); if (!r.ok) throw new Error('Не удалось загрузить ' + url); return new Uint8Array(await r.arrayBuffer()); };
+
+  async function openEntry(login, pass, entries) {
+    const id = hex(new Uint8Array(await crypto.subtle.digest('SHA-256', enc.encode('meddash-user:' + normLogin(login))))).slice(0, 16);
+    const e = entries.find(x => x.id === id), bad = () => { const err = new Error('bad'); err.bad = true; return err; };
+    if (!e) throw bad();
+    const base = await crypto.subtle.importKey('raw', enc.encode(normLogin(login) + '\0' + pass), 'PBKDF2', false, ['deriveKey']);
+    const key = await crypto.subtle.deriveKey({ name: 'PBKDF2', salt: b64(e.salt), iterations: ITER, hash: 'SHA-256' }, base, { name: 'AES-GCM', length: 256 }, false, ['decrypt']);
+    try { return JSON.parse(dec.decode(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: b64(e.iv), additionalData: enc.encode('meddash-entry') }, key, b64(e.ct)))); }
+    catch (x) { throw bad(); }
+  }
+
+  async function unlock(login, pass, remember) {
+    msg('Расшифровка…', true); $('go').disabled = true;
+    try {
+      if (!window.crypto || !crypto.subtle) throw new Error('Нужен защищённый контекст (https).');
+      const ver = (await (await fetch('version.txt', { cache: 'no-store' })).text()).trim();
+      const keyring = await (await fetch('keyring.json', { cache: 'no-store' })).json();
+      const info = await openEntry(login, pass, keyring.entries);
+      let profs, adminFile = null, master = null;
+      if (info.role === 'admin') {
+        master = unhex(info.master);
+        const man = await openBlob(await hmac(master, 'manifest'), await getBin('manifest.bin'), 'meddash2');
+        profs = await Promise.all(man.profiles.map(async p => Object.assign({}, p, { dek: hex(await hmac(master, 'dek:' + p.id)) })));
+        adminFile = man.admin_file;
+      } else profs = info.profiles || [];
+      if (!profs.length) throw new Error('Для этой записи нет доступных профилей.');
+      await registerSW();
+      const name = PREFIX + ver;
+      await caches.delete(name);
+      const cache = await caches.open(name);
+      const put = async (path, text) => {
+        window.__lastPath = path;
+        const u = new URL('app/' + path, SCOPE).href, mk = () => new Response(text, { headers: { 'Content-Type': MIME[path.split('.').pop()] || 'text/plain' } });
+        try { await cache.put(u, mk()); } catch (err) { await cache.delete(u); await cache.put(u, mk()); }   // защита от редкого «Entry already exists»
+      };
+      let adminData = null;
+      if (adminFile) { try { adminData = await openBlob(await hmac(master, 'admin'), await getBin('d/' + adminFile + '.bin'), 'meddash2'); } catch (e) { adminData = null; } }
+      for (const p of profs) {
+        msg(`Расшифровка: ${p.short || p.name}…`, true);
+        const data = await openBlob(unhex(p.dek), await getBin('d/' + p.file + '.bin'), 'meddash2');
+        for (const [path, text] of Object.entries(data.files)) await put(p.id + '/' + path, text);
+        if (adminData) for (const [path, text] of Object.entries(adminData.files)) await put(p.id + '/' + path, text);   // админка доступна из контекста любого профиля
+      }
+      await wipe(name);                                   // старые версии удаляем только после успешной записи новой
+      const home = (profs.find(p => p.id === info.home) || profs[0]).id;
+      lsSet(K_VER, ver); lsSet(K_REM, remember ? '1' : null);
+      lsSet(K_ACC, JSON.stringify({ login: normLogin(login), name: info.name || '', role: info.role, home, profiles: profs.map(p => ({ id: p.id, name: p.name, short: p.short, sex: p.sex, birth: p.birth || null })) }));
+      lsSet(K_CUR, home);
+      if (info.token) lsSet(K_TOKEN, info.token);         // токен для кнопки синхронизации, выданный админом (ему можно только запускать workflow)
+      location.replace(new URL('app/' + home + '/index.html', SCOPE).href);
+    } catch (e) {
+      msg(e.bad ? 'Неверный логин или пароль.' : ((e.message || 'Ошибка') + (window.__lastPath ? ' [' + window.__lastPath + ']' : '')));
+      $('go').disabled = false;
+    }
+  }
+
+  $('f').addEventListener('submit', e => { e.preventDefault(); unlock($('lg').value, $('pw').value, $('rem').checked); });
+  $('open').addEventListener('click', () => location.replace(appUrl()));
+
+  (async () => {
+    const q = new URLSearchParams(location.search);
+    const prev = access();
+    if (prev && prev.login) $('lg').value = prev.login;
+    if (q.has('lock')) { if (prev && prev.role === 'user') lsSet(K_TOKEN, null); await wipe(); lsSet(K_REM, null); msg('Данные стёрты с этого устройства.', true); return; }
+    if (lsGet(K_REM) !== '1') { await wipe(); return; }          // «запомнить» не выбрано — логин и пароль нужны каждый раз
+    if (!(await cached())) return;
+    let fresh = true;
+    try { fresh = (await (await fetch('version.txt', { cache: 'no-store' })).text()).trim() === lsGet(K_VER); } catch (e) { }   // офлайн — открываем сохранённое
+    if (fresh) { location.replace(appUrl()); return; }
+    $('open').hidden = false; $('rem').checked = true;
+    msg('Доступна новая версия: введите пароль, чтобы обновить.', true);
+    $('note').textContent = 'Сохранённая на этом устройстве версия остаётся доступной кнопкой ниже.';
+  })();
+})();
+</script>
+</body>
+</html>

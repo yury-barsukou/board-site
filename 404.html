@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Перенаправление на вход</title>
+<!--
+  Страницы дашборда по адресу /app/… существуют только внутри браузера: их отдаёт service worker из расшифрованного кэша.
+  Если service worker не активен (данные сайта очищены, другой браузер или встроенный браузер мессенджера, давно не заходили на iPhone),
+  GitHub Pages отвечает 404. Эта страница (её Pages показывает на любой несуществующий адрес) возвращает на страницу входа.
+  Данных здесь нет.
+-->
+<style>body{font:16px system-ui,sans-serif;margin:0;display:grid;place-items:center;min-height:100vh;background:#f5f6f8;color:#222}
+@media (prefers-color-scheme:dark){body{background:#14161a;color:#e6e6e6}} a{color:#2563eb}</style>
+</head>
+<body>
+<p>Страница доступна только после входа. Перенаправляю на <a id="go" href="./">страницу входа</a>…</p>
+<script>
+  // корень сайта: всё до «/app/», иначе первый сегмент пути (имя репозитория проекта)
+  (function () {
+    var p = location.pathname, i = p.indexOf('/app/');
+    var base = i >= 0 ? p.slice(0, i + 1) : '/' + (p.split('/')[1] ? p.split('/')[1] + '/' : '');
+    if (base === location.pathname) base = '/';
+    document.getElementById('go').href = base;
+    location.replace(base);
+  })();
+</script>
+<noscript><p>Откройте страницу входа вручную.</p></noscript>
+</body>
+</html>
